@@ -47,6 +47,9 @@ class RPCClient:
 
     def on_connect(self, client, flags, rc, properties):
         logger.info("Connected: %s", self._cid)
+        # Re-subscribe after reconnect (gmqtt doesn't auto-resubscribe)
+        for topic, qos in self._subscriptions.items():
+            self._mqttclient.subscribe(topic, qos)
 
     async def on_message(self, client, topic, payload, qos, properties):
         """ Handle received messages
