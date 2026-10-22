@@ -31,6 +31,7 @@ class RPCServer:
         self._mqtt_broker_host = kwargs.get("host", "127.0.0.1")
         self._mqtt_broker_port = kwargs.get("port", 1883)
         self._mqttclient = None
+        self._extra_subscriptions = []  # Track extra topics for reconnection
 
     def _send_response(self, response, properties):
         """ send back response """
@@ -48,6 +49,9 @@ class RPCServer:
     def on_connect(self, client, flags, rc, properties):
         logger.info('Connected: %s', self._cid)
         self._mqttclient.subscribe(self._topic, 2)
+        # Re-subscribe extra topics after reconnect (gmqtt doesn't auto-resubscribe)
+        for topic, qos in self._extra_subscriptions:
+            self._mqttclient.subscribe(topic, qos)
 
     async def on_message(self, client, topic, payload, qos, properties):
         """ check message properties """
@@ -180,6 +184,18 @@ class RPCServer:
         if not callable(cb):
             raise ValueError
         self._on_rpcmsg_callback = cb
+
+    def subscribe(self, topic: str, qos: int = 2):
+        """Subscribe to an additional MQTT topic on the existing client.
+
+        This allows the same RPC server to handle messages arriving on
+        multiple topic prefixes (e.g. both ``rpc/{cid}`` and ``link/{cid}``).
+        Must be called after :meth:`start`.
+        """
+        # Track subscription for re-subscription after reconnect
+        self._extra_subscriptions.append((topic, qos))
+        if self._mqttclient is not None:
+            self._mqttclient.subscribe(topic, qos)
 
     def set_handler(self, cmd: str, cb, classpath):
         self._rpc_handlers[cmd] = RPCHandler(cmd, cb, classpath)
